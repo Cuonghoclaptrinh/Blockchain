@@ -1,21 +1,32 @@
+// src/app/employee/page.tsx
 'use client';
 import { usePayrollContract } from '@/hooks/usePayrollContract';
 import { usePublicClient } from 'wagmi';
 import { formatEther } from 'viem';
 import { useEffect, useState } from 'react';
-import { format } from 'date-fns';
+import { format, formatDuration, intervalToDuration } from 'date-fns';
 import { CONTRACT_ADDRESS, CONTRACT_ABI } from '@/constants/contract';
 import { decodeEventLog } from 'viem';
+import { useToast } from '@/hooks/useToast'; // THÊM TOAST
 
 interface HistoryItem {
     date: string;
-    hours: number;  // để nguyên là phút
+    hours: number; // phút
     amount: string;
 }
 
 export default function EmployeePage() {
-    const { address, checkIn, checkOut, withdraw, isPending, currency } = usePayrollContract();
+    const {
+        address,
+        checkIn,
+        checkOut,
+        withdraw,
+        isPending,
+        currency,
+    } = usePayrollContract();
+
     const publicClient = usePublicClient();
+    const toast = useToast(); // DÙNG TOAST
 
     const [accrued, setAccrued] = useState('0');
     const [checkInTime, setCheckInTime] = useState<Date | null>(null);
@@ -77,7 +88,7 @@ export default function EmployeePage() {
                 // 2. LẤY CHECK-IN HIỆN TẠI
                 const checkInLogs = await publicClient.getLogs({
                     address: CONTRACT_ADDRESS,
-                    fromBlock: 0n,
+                    fromBlock: BigInt(0),
                     toBlock: 'latest',
                     event: { name: 'CheckedIn', type: 'event', inputs: [{ name: 'who', type: 'address', indexed: true }, { name: 'ts', type: 'uint256' }] },
                 });
@@ -95,7 +106,7 @@ export default function EmployeePage() {
                 // 3. KIỂM TRA CHECK-OUT MỚI NHẤT
                 const checkOutLogs = await publicClient.getLogs({
                     address: CONTRACT_ADDRESS,
-                    fromBlock: 0n,
+                    fromBlock: BigInt(0),
                     toBlock: 'latest',
                     event: { name: 'CheckedOut', type: 'event', inputs: [{ name: 'who', type: 'address', indexed: true }, { name: 'ts', type: 'uint256' }, { name: 'workedHours', type: 'uint256' }] },
                 });
@@ -135,6 +146,7 @@ export default function EmployeePage() {
 
             } catch (error) {
                 console.error('Lỗi tải dữ liệu:', error);
+                toast.error('Lỗi tải dữ liệu nhân viên!');
             } finally {
                 setLoading(false);
             }
@@ -143,7 +155,7 @@ export default function EmployeePage() {
         fetchAll();
         const interval = setInterval(fetchAll, 10000);
         return () => clearInterval(interval);
-    }, [address, publicClient]);
+    }, [address, publicClient, toast]);
 
     // ĐẾM GIỜ ĐANG LÀM VIỆC
     useEffect(() => {
@@ -154,12 +166,46 @@ export default function EmployeePage() {
         return () => clearInterval(timer);
     }, [checkInTime]);
 
-    const handleCheckIn = async () => { try { await checkIn(); setCheckInTime(new Date()); } catch (e: any) { alert('Check-in lỗi: ' + e.message); } };
-    const handleCheckOut = async () => { try { await checkOut(); setCheckInTime(null); setWorkedToday(0); } catch (e: any) { alert('Check-out lỗi: ' + e.message); } };
-    const handleWithdraw = async () => { try { await withdraw(); setAccrued('0'); } catch (e: any) { alert('Rút lương lỗi: ' + e.message); } };
+    const handleCheckIn = async () => {
+        toast.loading('Đang check-in...');
+        try {
+            await checkIn();
+            toast.success('Check-in thành công!');
+            setCheckInTime(new Date());
+        } catch (e: any) {
+            toast.error(e.message || 'Check-in thất bại!');
+        }
+    };
+
+    const handleCheckOut = async () => {
+        toast.loading('Đang check-out...');
+        try {
+            await checkOut();
+            toast.success('Check-out thành công!');
+            setCheckInTime(null);
+            setWorkedToday(0);
+        } catch (e: any) {
+            toast.error(e.message || 'Check-out thất bại!');
+        }
+    };
+
+    const handleWithdraw = async () => {
+        if (Number(accrued) === 0) {
+            toast.error('Chưa có lương để rút!');
+            return;
+        }
+        toast.loading('Đang rút lương...');
+        try {
+            await withdraw();
+            toast.success('Rút lương thành công!');
+            setAccrued('0');
+        } catch (e: any) {
+            toast.error(e.message || 'Rút lương thất bại!');
+        }
+    };
 
     if (!address) return <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100"><p className="text-xl text-red-600 font-bold">Kết nối ví MetaMask!</p></div>;
-    if (loading) return <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100"><p className="text-xl font-semibold text-indigo-700">Đang tải...</p></div>;
+    // if (loading) return <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100"><p className="text-xl font-semibold text-indigo-700">Đang tải...</p></div>;
     if (!isEmployee) return <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100"><p className="text-xl text-red-600 font-bold">Bạn chưa là nhân viên!</p></div>;
 
     return (

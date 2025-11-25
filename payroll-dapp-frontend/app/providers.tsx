@@ -33,7 +33,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { WagmiProvider } from 'wagmi';
 import { RainbowKitProvider, getDefaultConfig } from '@rainbow-me/rainbowkit';
-import { wagmiConfig } from '@/lib/wagmi';
 import { hardhat } from 'wagmi/chains';
 import { http } from 'viem';
 import '@rainbow-me/rainbowkit/styles.css';
@@ -43,7 +42,7 @@ const queryClient = new QueryClient();
 const config = getDefaultConfig({
     appName: 'Payroll DApp',
     projectId: 'YOUR_PROJECT_ID', // Bỏ qua cũng được
-    chains: [hardhat], // ← BUỘC DÙNG LOCALHOST (chainId: 31337)
+    chains: [hardhat],
     transports: {
         [hardhat.id]: http('http://127.0.0.1:8545'), // ← RPC LOCAL
     },

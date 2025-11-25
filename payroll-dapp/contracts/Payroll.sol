@@ -3,11 +3,12 @@ pragma solidity ^0.8.27;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 /// @title Payroll DApp - Automatic Attendance & Salary System
 /// @notice Hệ thống chấm công + trả lương tự động (demo + production-ready)
 /// @dev Tất cả hàm đã có trong ABI → Frontend gọi được 100%
-contract Payroll is Ownable, ReentrancyGuard {
+contract Payroll is Ownable, ReentrancyGuard, Pausable {
     struct Attendance {
         uint256 timestamp;
         uint256 workedHours;
@@ -15,8 +16,8 @@ contract Payroll is Ownable, ReentrancyGuard {
 
     struct Employee {
         string name;
-        uint256 hourlyRate; // wei per hour
-        uint256 accrued; // wei đang chờ trả
+        uint256 hourlyRate;
+        uint256 accrued;
         bool exists;
     }
 
@@ -25,6 +26,10 @@ contract Payroll is Ownable, ReentrancyGuard {
     mapping(address => Employee) public employees;
     mapping(address => Attendance[]) public attendanceHistory;
     mapping(address => uint256) public checkInTs;
+
+    // THÊM 2 CONSTANT ĐỂ AN TOÀN
+    uint256 public constant MIN_HOURLY_RATE = 0.0001 ether; // Tối thiểu 0.0001 ETH/giờ
+    uint256 public constant MAX_ACCRUED = 10000 ether; // Tối đa tích lũy 100 ETH
 
     // ======= EVENTS =======
     event EmployeeAdded(address indexed who, string name, uint256 rate);
@@ -37,9 +42,23 @@ contract Payroll is Ownable, ReentrancyGuard {
     event PaidAll(uint256 totalPaid);
     event Withdrawn(address indexed who, uint256 amount);
     event LowBalance(uint256 required, uint256 available);
+    event EmergencyWithdraw(uint256 amount);
 
     // ======= CONSTRUCTOR =======
     constructor() Ownable(msg.sender) {}
+
+    function pause() external onlyOwner {
+        _pause();
+    }
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
+    function emergencyWithdraw() external onlyOwner whenPaused {
+        uint256 amount = address(this).balance;
+        emit EmergencyWithdraw(amount);
+        payable(owner()).transfer(amount);
+    }
 
     // ======= DEPOSIT FUNDS =======
     /// @notice Nạp tiền vào quỹ lương (có kiểm tra)
@@ -99,7 +118,7 @@ contract Payroll is Ownable, ReentrancyGuard {
     }
 
     // ======= ATTENDANCE =======
-    function checkIn() external {
+    function checkIn() external whenNotPaused {
         require(employees[msg.sender].exists, "Not employee");
         require(checkInTs[msg.sender] == 0, "Already checked in");
 
@@ -107,7 +126,7 @@ contract Payroll is Ownable, ReentrancyGuard {
         emit CheckedIn(msg.sender, block.timestamp);
     }
 
-    function checkOut() external {
+    function checkOut() external whenNotPaused {
         require(employees[msg.sender].exists, "Not employee");
         uint256 inTs = checkInTs[msg.sender];
         require(inTs != 0, "Not checked in");
@@ -118,11 +137,10 @@ contract Payroll is Ownable, ReentrancyGuard {
         uint256 workedMinutes = (elapsedSeconds + 59) / 60;
         if (workedMinutes > 16 * 60) workedMinutes = 16 * 60;
 
-        checkInTs[msg.sender] = 0;
-
-        // SỬA DÒNG NÀY: viết liền để tránh overflow
         uint256 amount = (workedMinutes * employees[msg.sender].hourlyRate) /
             60;
+
+        checkInTs[msg.sender] = 0;
         employees[msg.sender].accrued += amount;
 
         attendanceHistory[msg.sender].push(
@@ -160,7 +178,7 @@ contract Payroll is Ownable, ReentrancyGuard {
     // }
 
     // ======= PAYMENTS =======
-    function withdraw() external nonReentrant {
+    function withdraw() external nonReentrant whenNotPaused {
         require(employees[msg.sender].exists, "Not employee");
         uint256 amt = employees[msg.sender].accrued;
         require(amt > 0, "Nothing to withdraw");
