@@ -19,6 +19,7 @@ contract Payroll is Ownable, ReentrancyGuard, Pausable {
         uint256 hourlyRate;
         uint256 accrued;
         bool exists;
+        bool isActive;
     }
 
     // ======= STORAGE =======
@@ -86,7 +87,8 @@ contract Payroll is Ownable, ReentrancyGuard, Pausable {
             name: _name,
             hourlyRate: _hourlyRate,
             accrued: 0,
-            exists: true
+            exists: true,
+            isActive : true
         });
         employeeList.push(_addr);
 
@@ -234,6 +236,33 @@ contract Payroll is Ownable, ReentrancyGuard, Pausable {
         require(ok, "Transfer failed");
 
         emit SalaryPaid(_emp, amt);
+    }
+
+    function payBatch(
+        address[] calldata _employees
+    ) external onlyOwner nonReentrant whenNotPaused {
+        uint256 totalPaid = 0;
+        for (uint256 i = 0; i < _employees.length; i++) {
+            address emp = _employees[i];
+            if (
+                !employees[emp].exists ||
+                !employees[emp].isActive ||
+                employees[emp].accrued == 0
+            ) continue;
+
+            uint256 amt = employees[emp].accrued;
+            if (address(this).balance < amt + totalPaid) break; // An toàn
+
+            employees[emp].accrued = 0;
+            (bool ok, ) = emp.call{value: amt}("");
+            if (ok) {
+                totalPaid += amt;
+                emit SalaryPaid(emp, amt);
+            } else {
+                employees[emp].accrued = uint128(amt); // rollback
+            }
+        }
+        if (totalPaid > 0) emit PaidAll(totalPaid);
     }
 
     // ======= READ HELPERS =======
