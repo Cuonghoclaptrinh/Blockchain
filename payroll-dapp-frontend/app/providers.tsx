@@ -27,6 +27,7 @@ const config = getDefaultConfig({
         [sepolia.id]: http(process.env.NEXT_PUBLIC_RPC_URL!),
         // [sepolia.id]: http('https://rpc.sepolia.org'),
     },
+    ssr: true,
 });
 
 export default function Providers({ children }: { children: React.ReactNode }) {

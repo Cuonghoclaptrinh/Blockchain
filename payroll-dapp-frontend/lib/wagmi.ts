@@ -23,4 +23,5 @@ export const wagmiConfig = getDefaultConfig({
         [sepolia.id]: http(process.env.NEXT_PUBLIC_RPC_URL!),
         // [sepolia.id]: http('https://rpc.sepolia.org'),
     },
+    ssr: true,
 });

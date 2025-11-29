@@ -12,16 +12,19 @@ export default function RedirectHandler() {
     const pathname = usePathname();
 
     useEffect(() => {
-        // Nếu chưa connect ví → không làm gì
-        if (!isConnected || !address) return;
-
-        // Nếu đang ở trang chủ → tự động chuyển
-        if (pathname === '/') {
-            if (isOwner) {
-                router.replace('/admin');
-            } else {
-                router.replace('/employee');
+        if (isConnected && address) {
+            if (pathname === '/') {
+                if (isOwner) {
+                    router.replace('/admin');
+                } else {
+                    router.replace('/employee');
+                }
             }
+        }
+
+        // Trường hợp 2: Ngắt kết nối ví → về trang chủ ngay lập tức
+        if (!isConnected && pathname !== '/') {
+            router.replace('/');
         }
     }, [isConnected, address, isOwner, pathname, router]);
 
