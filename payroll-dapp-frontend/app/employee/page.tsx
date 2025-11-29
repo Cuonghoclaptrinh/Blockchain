@@ -467,6 +467,13 @@ import { format } from 'date-fns';
 import { CONTRACT_ADDRESS, CONTRACT_ABI } from '@/constants/contract';
 import { useToast } from '@/hooks/useToast';
 
+import { useQuery } from '@tanstack/react-query';
+import { multicall } from 'wagmi/actions';
+import { wagmiConfig } from '@/lib/wagmi';
+
+import { Abi } from 'viem';
+const ABI = CONTRACT_ABI as unknown as Abi;
+
 interface HistoryItem {
     date: string;
     hours: number; // phút
@@ -495,136 +502,138 @@ export default function EmployeePage() {
         setMounted(true);
     }, []);
 
-    useEffect(() => {
-        if (!address || !publicClient) return;
+    const { data, isLoading, refetch } = useQuery({
+        queryKey: ['employee-data', address, reloadKey],
+        queryFn: async () => {
+            if (!address || !publicClient) return null;
 
-        const fetchAll = async () => {
-            setLoading(true);
             try {
-                // 1. Lấy thông tin nhân viên từ mapping employees
-                const empInfo: any = await publicClient.readContract({
-                    address: CONTRACT_ADDRESS,
-                    abi: CONTRACT_ABI,
-                    functionName: 'employees',
-                    args: [address],
+                // Multicall 4 hàm → chỉ 1 request duy nhất
+                const results = await multicall(wagmiConfig, {
+                    contracts: [
+                        {
+                            address: CONTRACT_ADDRESS,
+                            abi: ABI,
+                            functionName: 'employees',
+                            args: [address],
+                        },
+                        {
+                            address: CONTRACT_ADDRESS,
+                            abi: ABI,
+                            functionName: 'accruedOf',
+                            args: [address],
+                        },
+                        {
+                            address: CONTRACT_ADDRESS,
+                            abi: ABI,
+                            functionName: 'checkInTs',
+                            args: [address],
+                        },
+                        {
+                            address: CONTRACT_ADDRESS,
+                            abi: ABI,
+                            functionName: 'getAttendanceCount',
+                            args: [address],
+                        },
+                    ],
+                    allowFailure: false,
                 });
 
+                const [empInfo, accruedBigInt, checkInTsBigInt, attendanceCountBigInt] = results as [
+                    any,
+                    bigint,
+                    bigint,
+                    bigint
+                ];
+
+                // Xử lý thông tin nhân viên
                 let exists = false;
                 let empName = 'Nhân viên';
                 let empRate = 0n;
 
                 if (empInfo) {
-                    if ('exists' in empInfo) {
-                        // Trường hợp viem trả về dạng object
-                        exists = !!empInfo.exists;
-                        empName = empInfo.name || empName;
-                        empRate = empInfo.hourlyRate || 0n;
-                    } else if (Array.isArray(empInfo) && empInfo.length >= 4) {
-                        // Trường hợp trả về dạng array: [name, hourlyRate, accrued, exists, isActive]
-                        empName = empInfo[0] || empName;
-                        empRate = empInfo[1] || 0n;
+                    if (Array.isArray(empInfo)) {
+                        // Dạng tuple
                         exists = !!empInfo[3];
+                        empName = (empInfo[0] as string) || empName;
+                        empRate = empInfo[1] as bigint;
+                    } else if (typeof empInfo === 'object' && empInfo !== null) {
+                        // Dạng struct
+                        exists = !!empInfo.exists;
+                        empName = (empInfo.name as string) || empName;
+                        empRate = (empInfo.hourlyRate as bigint) || 0n;
                     }
                 }
 
                 if (!exists) {
                     setIsEmployee(false);
-                    setLoading(false);
-                    return;
+                    return { isEmployee: false };
                 }
 
                 setIsEmployee(true);
                 setName(empName);
-                setRate(Number(formatEther(empRate))); // bigint → number ETH/giờ
+                setRate(Number(formatEther(empRate)));
+                setAccrued(formatEther(accruedBigInt));
 
-                // 2. Lương tích lũy
-                const accruedRaw = (await publicClient.readContract({
-                    address: CONTRACT_ADDRESS,
-                    abi: CONTRACT_ABI,
-                    functionName: 'accruedOf',
-                    args: [address],
-                })) as bigint;
-                setAccrued(formatEther(accruedRaw));
+                // Check-in hiện tại
+                setCheckInTime(checkInTsBigInt > 0n ? new Date(Number(checkInTsBigInt) * 1000) : null);
 
-                // 3. Trạng thái check-in hiện tại: đọc trực tiếp từ mapping checkInTs
-                const checkInTs = (await publicClient.readContract({
-                    address: CONTRACT_ADDRESS,
-                    abi: CONTRACT_ABI,
-                    functionName: 'checkInTs',
-                    args: [address],
-                })) as bigint;
-
-                if (checkInTs && checkInTs > 0n) {
-                    const t = new Date(Number(checkInTs) * 1000);
-                    setCheckInTime(t);
-                } else {
-                    setCheckInTime(null);
-                }
-
-                // 4. Lịch sử chấm công: dùng getAttendanceCount + getAttendance, KHÔNG dùng getLogs nữa
-                const countRaw = (await publicClient.readContract({
-                    address: CONTRACT_ADDRESS,
-                    abi: CONTRACT_ABI,
-                    functionName: 'getAttendanceCount',
-                    args: [address],
-                })) as bigint;
-
-                const count = countRaw ?? 0n;
-
-                if (count === 0n) {
+                // Lịch sử chấm công
+                if (attendanceCountBigInt === 0n) {
                     setHistory([]);
                 } else {
                     const maxItems = 10n;
-                    const start = count > maxItems ? count - maxItems : 0n;
-                    const limit = count - start;
+                    const start = attendanceCountBigInt > maxItems ? attendanceCountBigInt - maxItems : 0n;
+                    const limit = attendanceCountBigInt - start;
 
-                    const attendance = (await publicClient.readContract({
+                    const attendance = await publicClient.readContract({
                         address: CONTRACT_ADDRESS,
-                        abi: CONTRACT_ABI,
+                        abi: ABI,
                         functionName: 'getAttendance',
                         args: [address, start, limit],
-                    })) as any[];
+                    }) as any[];
 
-                    const sessions: HistoryItem[] = [];
-
-                    for (const item of attendance) {
-                        let ts: bigint;
-                        let worked: bigint;
-
-                        if (Array.isArray(item)) {
-                            // [timestamp, workedHours]
-                            ts = item[0] as bigint;
-                            worked = item[1] as bigint;
-                        } else {
-                            // { timestamp, workedHours }
-                            ts = item.timestamp as bigint;
-                            worked = item.workedHours as bigint;
-                        }
-
-                        const time = new Date(Number(ts) * 1000);
-                        const minutes = Number(worked);
+                    const sessions: HistoryItem[] = attendance.map((item: any) => {
+                        const ts = Array.isArray(item) ? item[0] : item.timestamp;
+                        const worked = Array.isArray(item) ? item[1] : item.workedHours;
+                        const minutes = Number(worked as bigint);
                         const amount = (minutes * Number(formatEther(empRate))) / 60;
 
-                        sessions.push({
-                            date: format(time, 'dd/MM/yyyy'),
+                        return {
+                            date: format(new Date(Number(ts as bigint) * 1000), 'dd/MM/yyyy'),
                             hours: minutes,
                             amount: amount.toFixed(8),
-                        });
-                    }
+                        };
+                    });
 
-                    // Đảo ngược để phiên mới nhất lên trên
                     setHistory(sessions.reverse());
                 }
-            } catch (error) {
-                console.error('Lỗi tải dữ liệu:', error);
-                toast.error('Lỗi tải dữ liệu nhân viên!');
-            } finally {
-                setLoading(false);
-            }
-        };
 
-        fetchAll();
-    }, [address, publicClient, toast, reloadKey]);
+                return { isEmployee: true };
+            } catch (error: any) {
+                console.error('Lỗi tải dữ liệu:', error);
+                toast.error('Không thể tải dữ liệu. Đang thử lại...');
+                throw error;
+            }
+        },
+        refetchInterval: 20000, // 20 giây
+        staleTime: 15000,
+        retry: 3,
+        retryDelay: 2000,
+        enabled: !!address && !!publicClient,
+    });
+
+    // Cập nhật loading
+    useEffect(() => {
+        setLoading(isLoading);
+    }, [isLoading]);
+
+    // Reload khi check-in/out/withdraw
+    useEffect(() => {
+        if (reloadKey > 0) {
+            refetch();
+        }
+    }, [reloadKey, refetch]);
 
     // Đếm giờ đang làm việc
     useEffect(() => {

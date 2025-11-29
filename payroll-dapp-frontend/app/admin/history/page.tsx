@@ -128,10 +128,15 @@ export default function HistoryPage() {
             const events: HistoryEvent[] = [];
 
             try {
+                // Lấy block mới nhất
+                const latestBlock = await publicClient.getBlockNumber();
+                // Alchemy free-tier chỉ cho range tối đa 10 block → mình giới hạn lại
+                const fromBlock = latestBlock > 9n ? latestBlock - 9n : 0n;
+
                 const logs = await publicClient.getLogs({
                     address: CONTRACT_ADDRESS,
-                    fromBlock: BigInt(0),
-                    toBlock: 'latest',
+                    fromBlock,
+                    toBlock: latestBlock,
                 });
 
                 for (const log of logs) {
@@ -139,6 +144,7 @@ export default function HistoryPage() {
                     if (parsed) events.push(parsed);
                 }
 
+                // Mới nhất lên đầu
                 setHistory(events.sort((a, b) => b.blockNumber - a.blockNumber));
             } catch (err) {
                 console.error('Lỗi khi lấy lịch sử:', err);

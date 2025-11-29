@@ -1,7 +1,7 @@
 'use client';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { WagmiProvider } from 'wagmi';
+import { WagmiProvider, createConfig } from 'wagmi';
 import { RainbowKitProvider, getDefaultConfig } from '@rainbow-me/rainbowkit';
 import { hardhat } from 'wagmi/chains';
 import { sepolia } from 'wagmi/chains';
@@ -19,16 +19,14 @@ const queryClient = new QueryClient();
 //     },
 // });
 
-const config = getDefaultConfig({
-    appName: 'Payroll DApp',
-    projectId: process.env.NEXT_PUBLIC_WC_PROJECT_ID || 'fallback',
+const config = createConfig({
     chains: [sepolia],
     transports: {
-        [sepolia.id]: http(process.env.NEXT_PUBLIC_RPC_URL!),
-        // [sepolia.id]: http('https://rpc.sepolia.org'),
+        [sepolia.id]: http(process.env.NEXT_PUBLIC_RPC_URL || 'https://eth-sepolia.g.alchemy.com/v2/dDhavrxVmta_1pw2peUmd'),
     },
     ssr: true,
 });
+
 
 export default function Providers({ children }: { children: React.ReactNode }) {
     return (

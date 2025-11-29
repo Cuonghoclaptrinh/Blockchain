@@ -41,7 +41,7 @@ import Providers from './providers';
 import Navbar from '@/components/Navbar';
 import ToastContainer from '@/components/ToastContainer';
 import ErrorBoundary from '@/components/ErrorBoundary';
-import RedirectHandler from '@/components/RedirectHandler'; 
+import RedirectHandler from '@/components/RedirectHandler';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -56,7 +56,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="vi">
+    <html lang="vi" className="mdl-js">
       <body className={inter.className}>
         <Providers>
           <ErrorBoundary>
