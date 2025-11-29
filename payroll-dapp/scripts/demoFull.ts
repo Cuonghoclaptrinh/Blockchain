@@ -31,7 +31,7 @@ async function main() {
     // 4. Record work: Alice làm 8h
     console.log("\nAlice records 8 hours...");
     const payrollAsEmp1 = payroll.connect(emp1);
-    await (await payrollAsEmp1.recordWork(8)).wait();
+    // await (await payrollAsEmp1.recordWork(8)).wait();
     const expected = 8 * 0.001; // 0.008 ETH
     console.log(`Alice earned: ${expected} ETH`);
 

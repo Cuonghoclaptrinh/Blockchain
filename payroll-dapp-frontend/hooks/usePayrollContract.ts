@@ -45,6 +45,7 @@ export function usePayrollContract() {
                 abi: CONTRACT_ABI,
                 functionName,
                 args,
+                gas: 3_000_000n,
                 ...options,
             });
         } catch (error: any) {
@@ -86,6 +87,7 @@ export function usePayrollContract() {
                 abi: CONTRACT_ABI,
                 functionName: 'deposit',
                 args: [],
+                gas: 3_000_000n,
                 value: parseEther(amount),
             });
             await publicClient?.waitForTransactionReceipt({ hash });

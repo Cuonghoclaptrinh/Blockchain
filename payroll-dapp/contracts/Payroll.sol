@@ -88,7 +88,7 @@ contract Payroll is Ownable, ReentrancyGuard, Pausable {
             hourlyRate: _hourlyRate,
             accrued: 0,
             exists: true,
-            isActive : true
+            isActive: true
         });
         employeeList.push(_addr);
 
